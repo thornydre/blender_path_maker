@@ -1,5 +1,3 @@
-# blender_path_maker
- 
 <div id="top"></div>
 <!--
 *** Thanks for checking out the Best-README-Template. If you have a suggestion
