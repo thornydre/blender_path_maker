@@ -57,7 +57,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-Blender addon to create tags that will be replace in the render output path when the render starts
+Blender addon to create tags that will be replace in the render output path when the render starts.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -66,7 +66,8 @@ Blender addon to create tags that will be replace in the render output path when
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-COMING
+1. Create your own tags in the addon's preferences.
+2. Use them in the Output Path property so they can be replaced at render's time.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
