@@ -17,6 +17,9 @@ bl_info = {
     "category": "Render"
 }
 
+import subprocess
+import sys
+import os
 import bpy
 from bpy.app.handlers import persistent
 
@@ -100,9 +103,12 @@ class PATHMAKER_OT_ReplacementsActions(Operator):
 class PATHMAKER_UL_Replacements(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         if self.layout_type in {"DEFAULT", "COMPACT"}:
-            split = layout.split(factor=0.3)
-            split.prop(item, "replacement_name", text="", emboss=False)
-            split.prop(item, "script", text="", emboss=False)
+            general_split = layout.split(factor=0.3)
+            col1 = general_split.column()
+            left_split = col1.split(factor=0.5)
+            left_split.prop(item, "replacement_name", text="", emboss=False)
+            left_split.prop(item, "replacement_type", text="", emboss=True)
+            general_split.prop(item, "script", text="", emboss=False)
         elif self.layout_type in {"GRID"}:
             pass
 
@@ -110,11 +116,17 @@ class PATHMAKER_UL_Replacements(UIList):
 class PATHMAKER_PG_ReplacementsSet(PropertyGroup):
     replacement_name: bpy.props.StringProperty()
     script: bpy.props.StringProperty()
+    replacement_type: bpy.props.EnumProperty(
+        items=(
+            ("EXPR", "Expression", ""),
+            ("PATH", "Path", ""),
+            ("SCRIPT", "Script", "")
+        ),
+        name="fixed list"
+    )
 
 
 class PathMakerPreferences(AddonPreferences):
-    # this must match the add-on name, use "__package__"
-    # when defining this in a submodule of a python package.
     bl_idname = __name__
 
     replacements: bpy.props.CollectionProperty(type=PATHMAKER_PG_ReplacementsSet)
@@ -134,6 +146,71 @@ class PathMakerPreferences(AddonPreferences):
         col.operator("replacements.list_action", icon="TRIA_UP", text="").action = "UP"
         col.operator("replacements.list_action", icon="TRIA_DOWN", text="").action = "DOWN"
 
+        error_messages = []
+        priority_error_messages = []
+        names_list = []
+        duplicates_list = []
+
+        addon_prefs = bpy.context.preferences.addons[__name__].preferences
+
+        for replacement in addon_prefs.replacements:
+            if replacement.replacement_name in names_list:
+                if replacement.replacement_name not in duplicates_list:
+                    duplicates_list.append(replacement.replacement_name)
+                    priority_error_messages.append(f"{replacement.replacement_name} : Multiple instances of the same tag")
+
+            else:
+                names_list.append(replacement.replacement_name)
+
+            valid = True
+            match replacement.replacement_type:
+                case "EXPR":
+                    string_result = ""
+                    try:
+                        string_result = eval(replacement.script)
+                    except:
+                        error_messages.append(f"{replacement.replacement_name} : Invalid expression")
+                        valid = False
+
+                case "SCRIPT":
+                    if not os.path.isfile(replacement.script):
+                        error_messages.append(
+                            f"{replacement.replacement_name} : File '{replacement.script}' does not exist"
+                        )
+
+                    string_result = ""
+                    try:
+                        python_path = os.path.abspath(sys.executable)
+                        proc = subprocess.Popen(
+                            [python_path, replacement.script],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT
+                        )
+                        result = proc.communicate()[0]
+                        string_result = result.decode().strip()
+                    except:
+                        error_messages.append(f"{replacement.replacement_name} : Invalid script")
+                        valid = False
+
+                case _:
+                    break
+
+            if valid:
+                if not string_result:
+                    error_messages.append(f"{replacement.replacement_name} : Script returns empty String")
+
+                if type(string_result) != str:
+                    error_messages.append(f"{replacement.replacement_name} : Script does not return String type")
+
+        for msg in priority_error_messages:
+            row = layout.row()
+            row.label(text=msg, icon="ERROR")
+
+        for msg in error_messages:
+            row = layout.row()
+            row.label(text=msg, icon="ERROR")
+
+
 
 @persistent
 def makePathHandler(scene):
@@ -144,7 +221,16 @@ def makePathHandler(scene):
     new_file_path = scene.original_filepath
 
     for replacement in addon_prefs.replacements:
-        new_file_path = new_file_path.replace(replacement.replacement_name, eval(replacement.script))
+        match replacement.replacement_type:
+            case "EXPR":
+                new_file_path = new_file_path.replace(replacement.replacement_name, eval(replacement.script))
+            case "PATH":
+                new_file_path = new_file_path.replace(replacement.replacement_name, replacement.script)
+            case "SCRIPT":
+                python_path = os.path.abspath(sys.executable)
+                proc = subprocess.Popen([python_path, replacement.script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                result = proc.communicate()[0]
+                new_file_path = new_file_path.replace(replacement.replacement_name, result.decode().strip())
 
     scene.render.filepath = new_file_path
 
