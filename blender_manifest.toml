@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+
+id = "blender_path_maker"
+version = "1.3.4"
+name = "Path Maker"
+tagline = "Replaces custom tags in the Output Path"
+maintainer = "Lucas Boutrot <lucas.boutrot@gmail.com>"
+
+type = "add-on"
+tags = ["Render"]
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+
+copyright = ["2024 Lucas Boutrot"]
