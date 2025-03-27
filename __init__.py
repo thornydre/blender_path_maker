@@ -46,7 +46,7 @@ class PATHMAKER_OT_ReplacementsActions(Operator):
 				addon_prefs.replacements.move(idx, idx + 1)
 
 				addon_prefs.replacement_index += 1
-				info = f"Item {item.replacement_name} moved to position {addon_prefs.replacement_index + 1}"
+				info = f"Item {item.replacement_tag} moved to position {addon_prefs.replacement_index + 1}"
 				self.report({"INFO"}, info)
 
 			elif self.action == "UP" and idx >= 1:
@@ -54,17 +54,18 @@ class PATHMAKER_OT_ReplacementsActions(Operator):
 				addon_prefs.replacements.move(idx, idx - 1)
 
 				addon_prefs.replacement_index -= 1
-				info = f"Item {item.replacement_name} moved to position {addon_prefs.replacement_index + 1}"
+				info = f"Item {item.replacement_tag} moved to position {addon_prefs.replacement_index + 1}"
 				self.report({"INFO"}, info)
 
 			elif self.action == "REMOVE":
 				if addon_prefs.replacement_index > -1:
 					info = f"Item {addon_prefs.replacements[idx].name} removed from list"
 
-					addon_prefs.replacement_index -= 1
-					addon_prefs.replacement_index = max(addon_prefs.replacement_index, 0)
-
 					addon_prefs.replacements.remove(idx)
+
+					if addon_prefs.replacement_index >= len(addon_prefs.replacements):
+						addon_prefs.replacement_index = len(addon_prefs.replacements) - 1
+
 					self.report({"INFO"}, info)
 					
 		if self.action == "ADD":
@@ -74,10 +75,7 @@ class PATHMAKER_OT_ReplacementsActions(Operator):
 
 				addon_prefs.replacement_index = list_length - 1
 
-				# item.replacement_name = "<camera>"
-				# item.script = "bpy.context.scene.camera.name"
-
-				info = f"{item.replacement_name} added to list"
+				info = f"{item.replacement_tag} added to list"
 				self.report({"INFO"}, info)
 			else:
 				self.report({"INFO"}, "No addon preferences found")
@@ -85,9 +83,9 @@ class PATHMAKER_OT_ReplacementsActions(Operator):
 
 
 class PATHMAKER_OT_ResetPaths(Operator):
-	bl_idname = "pathmaker.reset_token"
-	bl_label = "Reset Paths Tokens"
-	bl_description = "If the path did not go back to the token state, press this button"
+	bl_idname = "pathmaker.reset_paths"
+	bl_label = "Reset Paths Tags"
+	bl_description = "If the paths did not go back to the tag state, press this button"
 
 	def execute(self, context):
 		resetPaths(context.scene)
@@ -110,7 +108,7 @@ class PATHMAKER_OT_ExportJson(Operator):
 
 		for replacement in addon_prefs.replacements:
 			replacements_list.append({
-				"replacement_name": replacement.replacement_name,
+				"replacement_tag": replacement.replacement_tag,
 				"script": replacement.script,
 				"replacement_type": replacement.replacement_type
 			})
@@ -145,7 +143,7 @@ class PATHMAKER_OT_ImportJson(Operator):
 
 		for replacement in replacements_list:
 			item = addon_prefs.replacements.add()
-			item.replacement_name = replacement["replacement_name"]
+			item.replacement_tag = replacement["replacement_tag"]
 			item.replacement_type = replacement["replacement_type"]
 			item.script = replacement["script"]
 
@@ -163,7 +161,7 @@ class PATHMAKER_UL_Replacements(UIList):
 			general_split = layout.split(factor=0.3)
 			col1 = general_split.column()
 			left_split = col1.split(factor=0.5)
-			left_split.prop(item, "replacement_name", text="", emboss=False)
+			left_split.prop(item, "replacement_tag", text="", emboss=False)
 			left_split.prop(item, "replacement_type", text="", emboss=True)
 			general_split.prop(item, "script", text="", emboss=True)
 		elif self.layout_type in {"GRID"}:
@@ -171,7 +169,7 @@ class PATHMAKER_UL_Replacements(UIList):
 
 
 class PATHMAKER_PG_ReplacementsSet(PropertyGroup):
-	replacement_name: bpy.props.StringProperty(name="Tag", description="Tag to be replaced by the result of the expression")
+	replacement_tag: bpy.props.StringProperty(name="Tag", description="Tag to be replaced by the result of the expression")
 	script: bpy.props.StringProperty(name="Expression", description="Expression from which the result will be replacing the tag")
 	replacement_type: bpy.props.EnumProperty(
 		name="Expression Type",
@@ -196,7 +194,7 @@ class PathMakerPreferences(AddonPreferences):
 
 		row = layout.row()
 		col = row.column(align=True)
-		col.operator("pathmaker.reset_token")
+		col.operator("pathmaker.reset_paths")
 		col = row.column(align=True)
 		col.operator("pathmaker.export_json")
 		col = row.column(align=True)
@@ -227,13 +225,13 @@ class PathMakerPreferences(AddonPreferences):
 		addon_prefs = bpy.context.preferences.addons[__name__].preferences
 
 		for replacement in addon_prefs.replacements:
-			if replacement.replacement_name in names_list:
-				if replacement.replacement_name not in duplicates_list:
-					duplicates_list.append(replacement.replacement_name)
-					priority_error_messages.append(f"{replacement.replacement_name} : Multiple instances with the same tag")
+			if replacement.replacement_tag in names_list:
+				if replacement.replacement_tag not in duplicates_list:
+					duplicates_list.append(replacement.replacement_tag)
+					priority_error_messages.append(f"{replacement.replacement_tag} : Multiple instances with the same tag")
 
 			else:
-				names_list.append(replacement.replacement_name)
+				names_list.append(replacement.replacement_tag)
 
 			valid = True
 			match replacement.replacement_type:
@@ -242,13 +240,13 @@ class PathMakerPreferences(AddonPreferences):
 					try:
 						string_result = eval(replacement.script)
 					except:
-						error_messages.append(f"{replacement.replacement_name} : Invalid expression")
+						error_messages.append(f"{replacement.replacement_tag} : Invalid expression")
 						valid = False
 
 				case "SCRIPT":
 					if not os.path.isfile(replacement.script):
 						error_messages.append(
-							f"{replacement.replacement_name} : File '{replacement.script}' does not exist"
+							f"{replacement.replacement_tag} : File '{replacement.script}' does not exist"
 						)
 
 					string_result = ""
@@ -262,18 +260,18 @@ class PathMakerPreferences(AddonPreferences):
 						result = proc.communicate()[0]
 						string_result = result.decode().strip()
 					except:
-						error_messages.append(f"{replacement.replacement_name} : Invalid script")
+						error_messages.append(f"{replacement.replacement_tag} : Invalid script")
 						valid = False
 
 				case _:
-					break
+					continue
 
 			if valid:
 				if string_result == "":
-					error_messages.append(f"{replacement.replacement_name} : Script returns empty String")
+					error_messages.append(f"{replacement.replacement_tag} : Script returns empty String")
 
 				if type(string_result) != str:
-					error_messages.append(f"{replacement.replacement_name} : Script does not return String type")
+					error_messages.append(f"{replacement.replacement_tag} : Script does not return String type")
 
 		for msg in priority_error_messages:
 			row = layout.row()
@@ -368,11 +366,12 @@ def makePathHandler(scene):
 		# Reset paths
 		scene.render.filepath = original_filepaths_dict["render"]
 		for node_name, node_path in original_filepaths_dict["nodes"].items():
-			node = scene.node_tree.nodes[node_name]
-			node.base_path = original_filepaths_dict["nodes"][node_name]["base_path"]
+			if scene.node_tree is not None:
+				node = scene.node_tree.nodes[node_name]
+				node.base_path = original_filepaths_dict["nodes"][node_name]["base_path"]
 
-			for i, file_slot in enumerate(node.file_slots):
-				node.file_slots[i].path = original_filepaths_dict["nodes"][node_name]["file_slots"][str(i)]
+				for i, file_slot in enumerate(node.file_slots):
+					node.file_slots[i].path = original_filepaths_dict["nodes"][node_name]["file_slots"][str(i)]
 
 		# Replace tokens
 		for replace_token, replace_by in replacements_dict.items():
@@ -413,14 +412,26 @@ def generateReplacements():
 	for replacement in addon_prefs.replacements:
 		match replacement.replacement_type:
 			case "EXPR":
-				replacements_dict[replacement.replacement_name] = eval(replacement.script)
+				try:
+					result = eval(replacement.script)
+				except:
+					pass
+				else:
+					if type(result) == str:
+						replacements_dict[replacement.replacement_tag] = result
 			case "PATH":
-				replacements_dict[replacement.replacement_name] = replacement.script
+				if type(replacement.script) == str:
+					replacements_dict[replacement.replacement_tag] = replacement.script
 			case "SCRIPT":
-				python_path = os.path.abspath(sys.executable)
-				proc = subprocess.Popen([python_path, replacement.script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-				result = proc.communicate()[0]
-				replacements_dict[replacement.replacement_name] = result.decode().strip()
+				try:
+					python_path = os.path.abspath(sys.executable)
+					proc = subprocess.Popen([python_path, replacement.script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+					result = proc.communicate()[0]
+				except:
+					pass
+				else:
+					if type(result.decode().strip()) == str:
+						replacements_dict[replacement.replacement_tag] = result.decode().strip()
 
 	return replacements_dict
 
@@ -432,19 +443,19 @@ def setDefaultReplacements():
 		addon_prefs.replacements_init = True
 
 		item = addon_prefs.replacements.add()
-		item.replacement_name = "<camera>"
+		item.replacement_tag = "<camera>"
 		item.script = "bpy.context.scene.camera.name"
 		item = addon_prefs.replacements.add()
-		item.replacement_name = "<layer>"
+		item.replacement_tag = "<layer>"
 		item.script = "bpy.context.view_layer.name"
 		item = addon_prefs.replacements.add()
-		item.replacement_name = "<scene>"
+		item.replacement_tag = "<scene>"
 		item.script = "bpy.context.scene.name"
 		item = addon_prefs.replacements.add()
-		item.replacement_name = "<filename>"
+		item.replacement_tag = "<filename>"
 		item.script = '".".join(bpy.data.filepath.split("\\\\")[-1].split("/")[-1].split(".")[:-1])'
 		item = addon_prefs.replacements.add()
-		item.replacement_name = "<dirname>"
+		item.replacement_tag = "<dirname>"
 		item.script = '"/".join(bpy.data.filepath.replace("\\\\", "/").split("/")[:-1])'
 
 
