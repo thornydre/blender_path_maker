@@ -18,7 +18,7 @@ from bpy.types import (Operator,
 
 class PATHMAKER_OT_ReplacementsActions(Operator):
 	"""Move items up and down, add and remove"""
-	bl_idname = "replacements.list_action"
+	bl_idname = "pathmaker.list_action"
 	bl_label = "List Actions"
 	bl_description = "Move items up and down, add and remove"
 	bl_options = {"REGISTER"}
@@ -62,6 +62,7 @@ class PATHMAKER_OT_ReplacementsActions(Operator):
 					info = f"Item {addon_prefs.replacements[idx].name} removed from list"
 
 					addon_prefs.replacement_index -= 1
+					addon_prefs.replacement_index = max(addon_prefs.replacement_index, 0)
 
 					addon_prefs.replacements.remove(idx)
 					self.report({"INFO"}, info)
@@ -81,6 +82,79 @@ class PATHMAKER_OT_ReplacementsActions(Operator):
 			else:
 				self.report({"INFO"}, "No addon preferences found")
 		return {"FINISHED"}
+
+
+class PATHMAKER_OT_ResetPaths(Operator):
+	bl_idname = "pathmaker.reset_token"
+	bl_label = "Reset Paths Tokens"
+	bl_description = "If the path did not go back to the token state, press this button"
+
+	def execute(self, context):
+		resetPaths(context.scene)
+
+		return{"FINISHED"}
+
+
+class PATHMAKER_OT_ExportJson(Operator):
+	bl_idname = "pathmaker.export_json"
+	bl_label = "Export JSON"
+	bl_description = "Export the preferences to a JSON file"
+
+	filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+	filter_glob: bpy.props.StringProperty(default="*.json", options={"HIDDEN"})
+
+	def execute(self, context):
+		addon_prefs = bpy.context.preferences.addons[__name__].preferences
+
+		replacements_list = []
+
+		for replacement in addon_prefs.replacements:
+			replacements_list.append({
+				"replacement_name": replacement.replacement_name,
+				"script": replacement.script,
+				"replacement_type": replacement.replacement_type
+			})
+
+		with open(self.filepath, "w") as f:
+			json.dump(replacements_list, f, indent=2)
+
+		return {"FINISHED"}
+
+	def invoke(self, context, event):
+		context.window_manager.fileselect_add(self)
+
+		return {"RUNNING_MODAL"}
+
+
+class PATHMAKER_OT_ImportJson(Operator):
+	bl_idname = "pathmaker.import_json"
+	bl_label = "Import JSON"
+	bl_description = "Import the preferences from a JSON file"
+
+	filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+	filter_glob: bpy.props.StringProperty(default="*.json", options={"HIDDEN"})
+
+	def execute(self, context):
+		addon_prefs = bpy.context.preferences.addons[__name__].preferences
+		addon_prefs.replacements.clear()
+
+		replacements_list = []
+
+		with open(self.filepath, "r") as f:
+			replacements_list = json.load(f)
+
+		for replacement in replacements_list:
+			item = addon_prefs.replacements.add()
+			item.replacement_name = replacement["replacement_name"]
+			item.replacement_type = replacement["replacement_type"]
+			item.script = replacement["script"]
+
+		return{"FINISHED"}
+
+	def invoke(self, context, event):
+		context.window_manager.fileselect_add(self)
+
+		return {"RUNNING_MODAL"}
 
 
 class PATHMAKER_UL_Replacements(UIList):
@@ -121,7 +195,14 @@ class PathMakerPreferences(AddonPreferences):
 		layout = self.layout
 
 		row = layout.row()
+		col = row.column(align=True)
+		col.operator("pathmaker.reset_token")
+		col = row.column(align=True)
+		col.operator("pathmaker.export_json")
+		col = row.column(align=True)
+		col.operator("pathmaker.import_json")
 
+		row = layout.row()
 		row.template_list(
 			listtype_name="PATHMAKER_UL_Replacements",
 			list_id="",
@@ -132,11 +213,11 @@ class PathMakerPreferences(AddonPreferences):
 		)
 		
 		col = row.column(align=True)
-		col.operator("replacements.list_action", icon="ADD", text="").action = "ADD"
-		col.operator("replacements.list_action", icon="REMOVE", text="").action = "REMOVE"
+		col.operator("pathmaker.list_action", icon="ADD", text="").action = "ADD"
+		col.operator("pathmaker.list_action", icon="REMOVE", text="").action = "REMOVE"
 		col.separator()
-		col.operator("replacements.list_action", icon="TRIA_UP", text="").action = "UP"
-		col.operator("replacements.list_action", icon="TRIA_DOWN", text="").action = "DOWN"
+		col.operator("pathmaker.list_action", icon="TRIA_UP", text="").action = "UP"
+		col.operator("pathmaker.list_action", icon="TRIA_DOWN", text="").action = "DOWN"
 
 		error_messages = []
 		priority_error_messages = []
@@ -203,7 +284,7 @@ class PathMakerPreferences(AddonPreferences):
 			row.label(text=msg, icon="ERROR")
 
 
-class PATHMAKER_OT_ExportAll(bpy.types.Operator):
+class PATHMAKER_OT_ExportAll(Operator):
 	bl_idname = "pathmaker.export_all"
 	bl_label = "Export All Exporters"
 
@@ -228,7 +309,7 @@ class PATHMAKER_OT_ExportAll(bpy.types.Operator):
 		return{"FINISHED"}
 
 
-class PATHMAKER_OT_ExportSelected(bpy.types.Operator):
+class PATHMAKER_OT_ExportSelected(Operator):
 	bl_idname = "pathmaker.export_selected"
 	bl_label = "Export Selected Exporter"
 
@@ -312,16 +393,17 @@ def resetPathHandler(scene):
 def resetPaths(scene):
 	scene.path_maker_rendering = False
 
-	original_filepaths_dict = json.loads(scene.original_filepaths)
+	if scene.original_filepaths:
+		original_filepaths_dict = json.loads(scene.original_filepaths)
 
-	scene.render.filepath = original_filepaths_dict["render"]
+		scene.render.filepath = original_filepaths_dict["render"]
 
-	for node_name, node_data in original_filepaths_dict["nodes"].items():
-		node = scene.node_tree.nodes[node_name]
-		node.base_path = node_data["base_path"]
+		for node_name, node_data in original_filepaths_dict["nodes"].items():
+			node = scene.node_tree.nodes[node_name]
+			node.base_path = node_data["base_path"]
 
-		for i, file_slot in enumerate(node.file_slots):
-			node.file_slots[i].path = node_data["file_slots"][str(i)]
+			for i, file_slot in enumerate(node.file_slots):
+				node.file_slots[i].path = node_data["file_slots"][str(i)]
 
 
 def generateReplacements():
@@ -360,10 +442,10 @@ def setDefaultReplacements():
 		item.script = "bpy.context.scene.name"
 		item = addon_prefs.replacements.add()
 		item.replacement_name = "<filename>"
-		item.script = '".".join(bpy.data.filepath.split("\\")[-1].split("/")[-1].split(".")[:-1])'
+		item.script = '".".join(bpy.data.filepath.split("\\\\")[-1].split("/")[-1].split(".")[:-1])'
 		item = addon_prefs.replacements.add()
 		item.replacement_name = "<dirname>"
-		item.script = '"/".join(bpy.data.filepath.replace("\\", "/").split("/")[:-1])'
+		item.script = '"/".join(bpy.data.filepath.replace("\\\\", "/").split("/")[:-1])'
 
 
 def exportersPanel(self, context):
@@ -384,6 +466,9 @@ classes = (
 			PATHMAKER_PG_ReplacementsSet,
 			PATHMAKER_OT_ExportAll,
 			PATHMAKER_OT_ExportSelected,
+			PATHMAKER_OT_ResetPaths,
+			PATHMAKER_OT_ExportJson,
+			PATHMAKER_OT_ImportJson,
 			PathMakerPreferences
 )
 
