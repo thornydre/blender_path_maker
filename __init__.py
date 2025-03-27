@@ -453,7 +453,7 @@ def setDefaultReplacements():
 		item.script = "bpy.context.scene.name"
 		item = addon_prefs.replacements.add()
 		item.replacement_tag = "<filename>"
-		item.script = '".".join(bpy.data.filepath.split("\\\\")[-1].split("/")[-1].split(".")[:-1])'
+		item.script = "bpy.path.display_name_from_filepath(bpy.data.filepath)"
 		item = addon_prefs.replacements.add()
 		item.replacement_tag = "<dirname>"
 		item.script = '"/".join(bpy.data.filepath.replace("\\\\", "/").split("/")[:-1])'
