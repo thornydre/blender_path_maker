@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "blender_path_maker"
-version = "1.4.0"
+version = "1.4.1"
 name = "Path Maker"
 tagline = "Replaces custom tags in the Output Path"
 maintainer = "Lucas Boutrot <lucas.boutrot@gmail.com>"
