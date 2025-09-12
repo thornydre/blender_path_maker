@@ -1,8 +1,9 @@
+import bpy
+import importlib.util
+import json
+import os
 import subprocess
 import sys
-import os
-import bpy
-import json
 from bpy.app.handlers import persistent
 
 from bpy.props import (StringProperty,
@@ -248,20 +249,39 @@ class PathMakerPreferences(AddonPreferences):
 						error_messages.append(
 							f"{replacement.replacement_tag} : File '{replacement.script}' does not exist"
 						)
+						valid = False
+						break
 
-					string_result = ""
-					try:
-						python_path = os.path.abspath(sys.executable)
-						proc = subprocess.Popen(
-							[python_path, replacement.script],
-							stdout=subprocess.PIPE,
-							stderr=subprocess.STDOUT
+					replacement_spec = importlib.util.spec_from_file_location("replacement_script", replacement.script)
+					replacement_module = importlib.util.module_from_spec(replacement_spec)
+					replacement_spec.loader.exec_module(replacement_module)
+
+					if not hasattr(replacement_module, "run"):
+						error_messages.append(
+							f"{replacement.replacement_tag} : File '{replacement.script}' is missing the 'run' function definition"
 						)
-						result = proc.communicate()[0]
-						string_result = result.decode().strip()
+						valid = False
+						break
+
+					try:
+						string_result = replacement_module.run()
 					except:
 						error_messages.append(f"{replacement.replacement_tag} : Invalid script")
 						valid = False
+
+					# string_result = ""
+					# try:
+					# 	python_path = os.path.abspath(sys.executable)
+					# 	proc = subprocess.Popen(
+					# 		[python_path, replacement.script],
+					# 		stdout=subprocess.PIPE,
+					# 		stderr=subprocess.STDOUT
+					# 	)
+					# 	result = proc.communicate()[0]
+					# 	string_result = result.decode().strip()
+					# except:
+					# 	error_messages.append(f"{replacement.replacement_tag} : Invalid script")
+					# 	valid = False
 
 				case _:
 					continue
@@ -270,7 +290,7 @@ class PathMakerPreferences(AddonPreferences):
 				if string_result == "":
 					error_messages.append(f"{replacement.replacement_tag} : Script returns empty String")
 
-				if type(string_result) != str:
+				if not isinstance(string_result, str):
 					error_messages.append(f"{replacement.replacement_tag} : Script does not return String type")
 
 		for msg in priority_error_messages:
@@ -332,6 +352,13 @@ class PATHMAKER_OT_ExportSelected(Operator):
 		return{"FINISHED"}
 
 
+def getCompoNodeTree(scene):
+	if bpy.app.version >= (5, 0, 0):
+		return scene.compositing_node_group
+
+	return scene.node_tree
+
+
 @persistent
 def makePathStartHandler(scene):
 	scene.path_maker_rendering = True
@@ -340,8 +367,10 @@ def makePathStartHandler(scene):
 	original_filepaths_dict = {"render": scene.render.filepath}
 
 	original_filepaths_dict["nodes"] = {}
-	if scene.node_tree is not None:
-		for node in scene.node_tree.nodes:
+
+	compo_node_tree = getCompoNodeTree(scene)
+	if compo_node_tree is not None:
+		for node in compo_node_tree.nodes:
 			if node.type == "OUTPUT_FILE":
 				original_filepaths_dict["nodes"][node.name] = {
 				"base_path": node.base_path,
@@ -363,11 +392,13 @@ def makePathHandler(scene):
 		# Generate replacement in association with the tokens
 		replacements_dict = generateReplacements()
 
+		compo_node_tree = getCompoNodeTree(scene)
+
 		# Reset paths
 		scene.render.filepath = original_filepaths_dict["render"]
 		for node_name, node_path in original_filepaths_dict["nodes"].items():
-			if scene.node_tree is not None:
-				node = scene.node_tree.nodes[node_name]
+			if compo_node_tree is not None:
+				node = compo_node_tree.nodes[node_name]
 				node.base_path = original_filepaths_dict["nodes"][node_name]["base_path"]
 
 				for i, file_slot in enumerate(node.file_slots):
@@ -378,7 +409,7 @@ def makePathHandler(scene):
 			scene.render.filepath = scene.render.filepath.replace(replace_token, replace_by)
 
 			for node_name in original_filepaths_dict["nodes"].keys():
-				node = scene.node_tree.nodes[node_name]
+				node = compo_node_tree.nodes[node_name]
 				node.base_path = node.base_path.replace(replace_token, replace_by)
 				for file_slot in node.file_slots:
 					file_slot.path = file_slot.path.replace(replace_token, replace_by)
@@ -397,8 +428,10 @@ def resetPaths(scene):
 
 		scene.render.filepath = original_filepaths_dict["render"]
 
+		compo_node_tree = getCompoNodeTree(scene)
+
 		for node_name, node_data in original_filepaths_dict["nodes"].items():
-			node = scene.node_tree.nodes[node_name]
+			node = compo_node_tree.nodes[node_name]
 			node.base_path = node_data["base_path"]
 
 			for i, file_slot in enumerate(node.file_slots):
@@ -417,21 +450,39 @@ def generateReplacements():
 				except:
 					pass
 				else:
-					if type(result) == str:
+					if isinstance(result, str):
 						replacements_dict[replacement.replacement_tag] = result
 			case "PATH":
-				if type(replacement.script) == str:
+				if isinstance(replacement.script, str):
 					replacements_dict[replacement.replacement_tag] = replacement.script
 			case "SCRIPT":
+				if not os.path.isfile(replacement.script):
+					break
+
+				replacement_spec = importlib.util.spec_from_file_location("replacement_script", replacement.script)
+				replacement_module = importlib.util.module_from_spec(replacement_spec)
+				replacement_spec.loader.exec_module(replacement_module)
+
+				if not hasattr(replacement_module, "run"):
+					break
+
 				try:
-					python_path = os.path.abspath(sys.executable)
-					proc = subprocess.Popen([python_path, replacement.script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-					result = proc.communicate()[0]
+					result = replacement_module.run()
 				except:
 					pass
 				else:
-					if type(result.decode().strip()) == str:
-						replacements_dict[replacement.replacement_tag] = result.decode().strip()
+					if isinstance(result, str):
+						replacements_dict[replacement.replacement_tag] = result
+
+				# try:
+				# 	python_path = os.path.abspath(sys.executable)
+				# 	proc = subprocess.Popen([python_path, replacement.script], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+				# 	result = proc.communicate()[0]
+				# except:
+				# 	pass
+				# else:
+				# 	if type(result.decode().strip()) == str:
+				# 		replacements_dict[replacement.replacement_tag] = result.decode().strip()
 
 	return replacements_dict
 
