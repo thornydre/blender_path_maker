@@ -352,11 +352,30 @@ class PATHMAKER_OT_ExportSelected(Operator):
 		return{"FINISHED"}
 
 
-def getCompoNodeTree(scene):
-	if bpy.app.version >= (5, 0, 0):
-		return scene.compositing_node_group
+def getCompoNodeGroup(scene, group_name):
+	if group_name == "Compositing Node Tree":
+		if bpy.app.version >= (5, 0, 0):
+			return scene.compositing_node_group
 
-	return scene.node_tree
+		return scene.node_tree
+
+	return bpy.data.node_groups.get(group_name)
+
+
+def getOutputNodes(node_tree):
+	output_list = []
+	
+	for node in node_tree.nodes:
+		if node.type == "OUTPUT_FILE":
+			output_list.append((node_tree, node))
+
+		if node.type == "GROUP":
+			child_output_list = getOutputNodes(node.node_tree)
+			for child_output in child_output_list:
+				if child_output not in output_list:
+					output_list.append(child_output)
+	
+	return output_list
 
 
 @persistent
@@ -368,16 +387,34 @@ def makePathStartHandler(scene):
 
 	original_filepaths_dict["nodes"] = {}
 
-	compo_node_tree = getCompoNodeTree(scene)
-	if compo_node_tree is not None:
-		for node in compo_node_tree.nodes:
-			if node.type == "OUTPUT_FILE":
-				original_filepaths_dict["nodes"][node.name] = {
-				"base_path": node.base_path,
-				"file_slots": {}
-				}
-				for i, file_slot in enumerate(node.file_slots):
-					original_filepaths_dict["nodes"][node.name]["file_slots"][str(i)] = file_slot.path
+	output_file_nodes = []
+	node_tree = getCompoNodeGroup(scene, "Compositing Node Tree")
+	if node_tree is not None:
+		output_file_nodes = getOutputNodes(node_tree)
+
+	for node_tree, node in output_file_nodes:
+		if original_filepaths_dict["nodes"].get(node_tree.name) is None:
+			original_filepaths_dict["nodes"][node_tree.name] = {}
+
+		if bpy.app.version >= (5, 0, 0):
+			node_directory = node.directory
+			node_file_output_items = node.file_output_items
+		else:
+			node_directory = node.base_path
+			node_file_output_items = node.file_slots
+
+		original_filepaths_dict["nodes"][node_tree.name][node.name] = {
+			"directory": node_directory,
+			"file_output_items": {}
+		}
+
+		if bpy.app.version >= (5, 0, 0):
+			original_filepaths_dict["nodes"][node_tree.name][node.name]["file_name"] = node.file_name
+			for i, file_output_item in enumerate(node_file_output_items):
+				original_filepaths_dict["nodes"][node_tree.name][node.name]["file_output_items"][str(i)] = file_output_item.name
+		else:
+			for i, file_output_item in enumerate(node_file_output_items):
+				original_filepaths_dict["nodes"][node_tree.name][node.name]["file_output_items"][str(i)] = file_output_item.path
 
 	scene.original_filepaths = json.dumps(original_filepaths_dict)
 
@@ -392,27 +429,46 @@ def makePathHandler(scene):
 		# Generate replacement in association with the tokens
 		replacements_dict = generateReplacements()
 
-		compo_node_tree = getCompoNodeTree(scene)
-
 		# Reset paths
 		scene.render.filepath = original_filepaths_dict["render"]
-		for node_name, node_path in original_filepaths_dict["nodes"].items():
-			if compo_node_tree is not None:
-				node = compo_node_tree.nodes[node_name]
-				node.base_path = original_filepaths_dict["nodes"][node_name]["base_path"]
+		for node_tree_name in original_filepaths_dict["nodes"].keys():
+			node_tree = getCompoNodeGroup(scene, node_tree_name)
 
-				for i, file_slot in enumerate(node.file_slots):
-					node.file_slots[i].path = original_filepaths_dict["nodes"][node_name]["file_slots"][str(i)]
+			node_tree_dict = original_filepaths_dict["nodes"][node_tree_name]
+			for node_name in node_tree_dict.keys():
+				node = node_tree.nodes[node_name]
 
-		# Replace tokens
-		for replace_token, replace_by in replacements_dict.items():
-			scene.render.filepath = scene.render.filepath.replace(replace_token, replace_by)
+				if bpy.app.version >= (5, 0, 0):
+					node.directory = node_tree_dict[node_name]["directory"]
+					node.file_name = node_tree_dict[node_name]["file_name"]
 
-			for node_name in original_filepaths_dict["nodes"].keys():
-				node = compo_node_tree.nodes[node_name]
-				node.base_path = node.base_path.replace(replace_token, replace_by)
-				for file_slot in node.file_slots:
-					file_slot.path = file_slot.path.replace(replace_token, replace_by)
+					for i, file_output_item in enumerate(node.file_output_items):
+						file_output_item.name = node_tree_dict[node_name]["file_output_items"][str(i)]
+
+				else:
+					node.base_path = node_tree_dict[node_name]["directory"]
+
+					for i, file_output_item in enumerate(node.file_slots):
+						file_output_item.path = node_tree_dict[node_name]["file_output_items"][str(i)]
+
+			# Replace tokens
+			for replace_token, replace_by in replacements_dict.items():
+				scene.render.filepath = scene.render.filepath.replace(replace_token, replace_by)
+
+				for node_name in node_tree_dict.keys():
+					node = node_tree.nodes[node_name]
+					if bpy.app.version >= (5, 0, 0):
+						node.directory = node.directory.replace(replace_token, replace_by)
+						node.file_name = node.file_name.replace(replace_token, replace_by)
+
+						for file_output_item in node.file_output_items:
+							file_output_item.name = file_output_item.name.replace(replace_token, replace_by)
+
+					else:
+						node.base_path = node.base_path.replace(replace_token, replace_by)
+
+						for file_output_item in node.file_slots:
+							file_output_item.path = file_output_item.path.replace(replace_token, replace_by)
 
 
 @persistent
@@ -428,14 +484,24 @@ def resetPaths(scene):
 
 		scene.render.filepath = original_filepaths_dict["render"]
 
-		compo_node_tree = getCompoNodeTree(scene)
+		for node_tree_name in original_filepaths_dict["nodes"].keys():
+			node_tree = getCompoNodeGroup(scene, node_tree_name)
 
-		for node_name, node_data in original_filepaths_dict["nodes"].items():
-			node = compo_node_tree.nodes[node_name]
-			node.base_path = node_data["base_path"]
+			node_tree_dict = original_filepaths_dict["nodes"][node_tree_name]
+			for node_name, node_data in node_tree_dict.items():
+				node = node_tree.nodes[node_name]
+				if bpy.app.version >= (5, 0, 0):
+					node.directory = node_data["directory"]
+					node.file_name = node_data["file_name"]
 
-			for i, file_slot in enumerate(node.file_slots):
-				node.file_slots[i].path = node_data["file_slots"][str(i)]
+					for i, file_output_item in enumerate( node.file_output_items):
+						file_output_item.name = node_data["file_output_items"][str(i)]
+
+				else:
+					node.base_path = node_data["directory"]
+
+					for i, file_output_item in enumerate(node.file_slots):
+						file_output_item.path = node_data["file_output_items"][str(i)]
 
 
 def generateReplacements():
@@ -494,19 +560,19 @@ def setDefaultReplacements():
 		addon_prefs.replacements_init = True
 
 		item = addon_prefs.replacements.add()
-		item.replacement_tag = "<camera>"
+		item.replacement_tag = "(camera)"
 		item.script = "bpy.context.scene.camera.name"
 		item = addon_prefs.replacements.add()
-		item.replacement_tag = "<layer>"
+		item.replacement_tag = "(layer)"
 		item.script = "bpy.context.view_layer.name"
 		item = addon_prefs.replacements.add()
-		item.replacement_tag = "<scene>"
+		item.replacement_tag = "(scene)"
 		item.script = "bpy.context.scene.name"
 		item = addon_prefs.replacements.add()
-		item.replacement_tag = "<filename>"
+		item.replacement_tag = "(filename)"
 		item.script = "bpy.path.display_name_from_filepath(bpy.data.filepath)"
 		item = addon_prefs.replacements.add()
-		item.replacement_tag = "<dirname>"
+		item.replacement_tag = "(dirname)"
 		item.script = '"/".join(bpy.data.filepath.replace("\\\\", "/").split("/")[:-1])'
 
 
