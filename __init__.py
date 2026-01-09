@@ -383,8 +383,9 @@ def makePathStartHandler(scene):
 	scene.path_maker_rendering = True
 
 	# List node and paths that are going to change during rendering
-	original_filepaths_dict = {"render": scene.render.filepath}
+	original_filepaths_dict = {}
 
+	original_filepaths_dict["render"] = scene.render.filepath
 	original_filepaths_dict["nodes"] = {}
 
 	output_file_nodes = []
@@ -424,13 +425,18 @@ def makePathStartHandler(scene):
 @persistent
 def makePathHandler(scene):
 	if scene.path_maker_rendering:
+		print("POUET")
 		original_filepaths_dict = json.loads(scene.original_filepaths)
 
 		# Generate replacement in association with the tokens
 		replacements_dict = generateReplacements()
 
-		# Reset paths
+		# FILE PATH
 		scene.render.filepath = original_filepaths_dict["render"]
+		for replace_token, replace_by in replacements_dict.items():
+			scene.render.filepath = scene.render.filepath.replace(replace_token, replace_by)
+
+		# NODE TREES
 		for node_tree_name in original_filepaths_dict["nodes"].keys():
 			node_tree = getCompoNodeGroup(scene, node_tree_name)
 
@@ -453,8 +459,6 @@ def makePathHandler(scene):
 
 			# Replace tokens
 			for replace_token, replace_by in replacements_dict.items():
-				scene.render.filepath = scene.render.filepath.replace(replace_token, replace_by)
-
 				for node_name in node_tree_dict.keys():
 					node = node_tree.nodes[node_name]
 					if bpy.app.version >= (5, 0, 0):
