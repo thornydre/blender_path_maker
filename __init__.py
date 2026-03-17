@@ -425,7 +425,6 @@ def makePathStartHandler(scene):
 @persistent
 def makePathHandler(scene):
 	if scene.path_maker_rendering:
-		print("POUET")
 		original_filepaths_dict = json.loads(scene.original_filepaths)
 
 		# Generate replacement in association with the tokens
@@ -593,15 +592,15 @@ def exportersPanel(self, context):
 
 ### REGISRTATION / UNREGISRTATION ###
 classes = (
-			PATHMAKER_OT_ReplacementsActions,
-			PATHMAKER_UL_Replacements,
-			PATHMAKER_PG_ReplacementsSet,
-			PATHMAKER_OT_ExportAll,
-			PATHMAKER_OT_ExportSelected,
-			PATHMAKER_OT_ResetPaths,
-			PATHMAKER_OT_ExportJson,
-			PATHMAKER_OT_ImportJson,
-			PathMakerPreferences
+	PATHMAKER_OT_ReplacementsActions,
+	PATHMAKER_UL_Replacements,
+	PATHMAKER_PG_ReplacementsSet,
+	PATHMAKER_OT_ExportAll,
+	PATHMAKER_OT_ExportSelected,
+	PATHMAKER_OT_ResetPaths,
+	PATHMAKER_OT_ExportJson,
+	PATHMAKER_OT_ImportJson,
+	PathMakerPreferences
 )
 
 def register():
