@@ -316,8 +316,10 @@ class PATHMAKER_OT_ExportAll(Operator):
 
 		for exporter in context.collection.exporters:
 			original_filepaths_lists.append(exporter.export_properties.filepath)
+			temp_str = exporter.export_properties.filepath
 			for replace_token, replace_by in replacements_dict.items():
-				exporter.export_properties.filepath = exporter.export_properties.filepath.replace(replace_token, replace_by)
+				temp_str = temp_str.replace(replace_token, replace_by)
+			exporter.export_properties.filepath = temp_str
 
 		bpy.ops.collection.export_all()
 
@@ -342,8 +344,10 @@ class PATHMAKER_OT_ExportSelected(Operator):
 
 		replacements_dict = generateReplacements()
 
+		temp_str = selected_exporter.export_properties.filepath
 		for replace_token, replace_by in replacements_dict.items():
-			selected_exporter.export_properties.filepath = selected_exporter.export_properties.filepath.replace(replace_token, replace_by)
+			temp_str = temp_str.replace(replace_token, replace_by)
+		selected_exporter.export_properties.filepath = temp_str
 
 		bpy.ops.collection.exporter_export(index=selected_index)
 
@@ -431,47 +435,45 @@ def makePathHandler(scene):
 		replacements_dict = generateReplacements()
 
 		# FILE PATH
-		scene.render.filepath = original_filepaths_dict["render"]
+		temp_str = original_filepaths_dict["render"]
 		for replace_token, replace_by in replacements_dict.items():
-			scene.render.filepath = scene.render.filepath.replace(replace_token, replace_by)
+			temp_str = temp_str.replace(replace_token, replace_by)
+		scene.render.filepath = temp_str
 
 		# NODE TREES
 		for node_tree_name in original_filepaths_dict["nodes"].keys():
 			node_tree = getCompoNodeGroup(scene, node_tree_name)
-
 			node_tree_dict = original_filepaths_dict["nodes"][node_tree_name]
-			for node_name in node_tree_dict.keys():
-				node = node_tree.nodes[node_name]
-
-				if bpy.app.version >= (5, 0, 0):
-					node.directory = node_tree_dict[node_name]["directory"]
-					node.file_name = node_tree_dict[node_name]["file_name"]
-
-					for i, file_output_item in enumerate(node.file_output_items):
-						file_output_item.name = node_tree_dict[node_name]["file_output_items"][str(i)]
-
-				else:
-					node.base_path = node_tree_dict[node_name]["directory"]
-
-					for i, file_output_item in enumerate(node.file_slots):
-						file_output_item.path = node_tree_dict[node_name]["file_output_items"][str(i)]
 
 			# Replace tokens
-			for replace_token, replace_by in replacements_dict.items():
-				for node_name in node_tree_dict.keys():
-					node = node_tree.nodes[node_name]
-					if bpy.app.version >= (5, 0, 0):
-						node.directory = node.directory.replace(replace_token, replace_by)
-						node.file_name = node.file_name.replace(replace_token, replace_by)
+			for node_name in node_tree_dict.keys():
+				node = node_tree.nodes[node_name]
+				if bpy.app.version >= (5, 0, 0):
+					temp_dir_str = node_tree_dict[node_name]["directory"]
+					temp_file_name_str = node_tree_dict[node_name]["file_name"]
+					for replace_token, replace_by in replacements_dict.items():
+						temp_dir_str = temp_dir_str.replace(replace_token, replace_by)
+						temp_file_name_str = temp_file_name_str.replace(replace_token, replace_by)
+					node.directory = temp_dir_str
+					node.file_name = temp_file_name_str
 
-						for file_output_item in node.file_output_items:
-							file_output_item.name = file_output_item.name.replace(replace_token, replace_by)
+					for i, file_output_item in enumerate(node.file_output_items):
+						temp_str = node_tree_dict[node_name]["file_output_items"][str(i)]
+						for replace_token, replace_by in replacements_dict.items():
+							temp_str = temp_str.replace(replace_token, replace_by)
+						file_output_item.name = temp_str
 
-					else:
-						node.base_path = node.base_path.replace(replace_token, replace_by)
+				else:
+					temp_dir_str = node_tree_dict[node_name]["directory"]
+					for replace_token, replace_by in replacements_dict.items():
+						temp_dir_str = temp_dir_str.replace(replace_token, replace_by)
+					node.base_path = temp_dir_str
 
-						for file_output_item in node.file_slots:
-							file_output_item.path = file_output_item.path.replace(replace_token, replace_by)
+					for file_output_item in node.file_slots:
+						temp_str = node_tree_dict[node_name]["file_output_items"][str(i)]
+						for replace_token, replace_by in replacements_dict.items():
+							temp_str = temp_str.replace(replace_token, replace_by)
+						file_output_item.path = temp_str
 
 
 @persistent
